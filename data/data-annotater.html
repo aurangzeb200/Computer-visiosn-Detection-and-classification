@@ -1,0 +1,655 @@
+from flask import Flask, render_template_string, request, jsonify
+import json
+import os
+
+app = Flask(__name__)
+
+# Ensure output directory for annotations exists.
+ANNOTATIONS_DIR = "annotations"
+if not os.path.exists(ANNOTATIONS_DIR):
+    os.makedirs(ANNOTATIONS_DIR)
+    print(f"Created annotations directory: {ANNOTATIONS_DIR}")
+
+html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WhatsApp Chat Simulation with Annotation Saving</title>
+  <style>
+    :root {
+      --chat-bg: #ECE5DD;
+      --message-field-bg: #F0F0F0;
+      --icon-color: #5B5B5B;
+      --voice-btn-bg: #25D366;
+      --text-color: #000;
+      --gesture-line-bg: #4a4747;
+    }
+    /* RESET */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: #E5DDD5;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+    .chat-container {
+      width: 360px;
+      height: 800px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      background-color: #fff;
+      position: relative;
+    }
+    .chat-container .message img {
+      max-height: 600px;
+      width: auto;
+      object-fit: contain;
+    }
+    .system-bar {
+      width: 100%;
+      height: 24px;
+      background-color: #fff;
+      color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      font-size: 14px;
+    }
+    .status-left, .status-right { display: flex; align-items: center; }
+    .status-right { gap: 3px; }
+    .battery-icon { transform: rotate(90deg); }
+    .wa-header {
+      width: 100%;
+      height: 56px;
+      background-color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 3px;
+      border: none;
+      justify-content: flex-start;
+    }
+    .back-button { border: none; background-color: transparent; cursor: pointer; margin-right: 5px; }
+    .back-button img { width: 25px; height: 28px; display: block; }
+    .profile-pic {
+      width: 37px; height: 37px;
+      border-radius: 50%; object-fit: cover;
+      margin-right: 5px; margin-left: -4px;
+    }
+    .contact-info { display: flex; flex-direction: column; color: #000; margin-right: auto; }
+    .contact-name { font-size: 16px; font-weight: 550; line-height: 1.2; }
+    .contact-status { font-size: 12px; opacity: 0.7; }
+    .icon-area { display: flex; align-items: center; }
+    .header-icon { border: none; background-color: transparent; cursor: pointer; padding: 0; margin-left: 16px; display: flex; align-items: center; justify-content: center; }
+    .header-icon img { display: block; }
+    .rotated { transform: rotate(-90deg); }
+    .phone-icon { margin-left: 24px; }
+    .chat-area {
+      flex: 1;
+      padding: 10px;
+      background-color: #FAFAFA;
+      background-image: url('https://i.pinimg.com/736x/8c/98/99/8c98994518b575bfd8c949e91d20548b.jpg');
+      background-size: cover;
+      overflow-y: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .chat-area::-webkit-scrollbar { display: none; }
+    .clearfix::after { content: ""; clear: both; display: table; }
+    .message {
+      max-width: 300px;
+      margin: 8px 0;
+      padding: 1px 20px 5px 5px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.3;
+      clear: both;
+      color: #000;
+      position: relative;
+    }
+    .message.incoming { background-color: #FFFFFF; float: left; padding-right: 45px; }
+    .message.outgoing { background-color: #DCF8C6; float: right; padding-right: 70px; }
+    .timestamp { font-size: 9px; color: #999; }
+    .message-box {
+      position: relative;
+      border: 2px solid #00FF00;
+      padding: 0;
+      margin: 1px 0;
+      box-sizing: border-box;
+    }
+    .message-box::before {
+      content: "Message";
+      position: absolute;
+      top: -1.2em;
+      left: 0;
+      background-color: #00FF00;
+      color: #000;
+      font-weight: bold;
+      font-size: 10px;
+      padding: 1px 3px;
+      border-radius: 2px;
+    }
+    .emoji-box {
+      position: relative;
+      border: 2px solid #00FF00;
+      padding: 0;
+      display: inline-block;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    .emoji-box::before {
+      content: "Emoji";
+      position: absolute;
+      top: -1.4em;
+      left: 0;
+      background-color: #00FF00;
+      color: #000;
+      font-weight: bold;
+      font-size: 10px;
+      padding: 1px 3px;
+      border-radius: 2px;
+    }
+    .emoji-box img { width: 20px; height: 20px; display: inline-block; vertical-align: middle; }
+    .small-emoji img { width: 20px; height: 20px; }
+    .large-emoji img { width: 50px; height: 50px; }
+    .timestamp-box {
+      position: relative;
+      border: 2px solid #00FF00;
+      padding: 2px;
+      display: inline-block;
+      margin: 0 2px;
+      box-sizing: border-box;
+    }
+    .timestamp-box::before {
+      content: "Timestamp";
+      position: absolute;
+      top: -1.4em;
+      left: 0;
+      background-color: #00FF00;
+      color: #000;
+      font-weight: bold;
+      font-size: 10px;
+      padding: 1px 3px;
+      border-radius: 2px;
+    }
+    .double-tick { width: 17px; height: 17px; display: inline-block; position: relative; top: 9px; right: 3px; }
+    .double-tick svg { width: 100%; height: 100%; }
+    .bottom-bar { width: 100%; background: transparent; padding: 8px; display: flex; flex-direction: column; align-items: center; }
+    .message-container { display: flex; align-items: center; width: 100%; max-width: 500px; }
+    .message-field { flex: 1; height: 40px; display: flex; align-items: center; background: var(--message-field-bg); border-radius: 20px; padding: 0 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .icon { display: flex; align-items: center; justify-content: center; margin: 0 4px; cursor: pointer; }
+    .sticker-icon { width: 18px; height: 18px; margin-right: 8px; }
+    .document-icon { width: 20px; height: 20px; }
+    .camera-icon { width: 27px; height: 27px; transform: translateY(1px); }
+    .sticker-icon svg, .camera-icon svg { width: 100%; height: 100%; }
+    .document-icon img { width: 100%; height: 100%; transform: rotate(-45deg); }
+    .text-input { flex: 1; border: none; outline: none; background: transparent; font-size: 16px; color: var(--text-color); height: 100%; }
+    .text-input::placeholder { font-size: 16px; }
+    .voice-button { background: var(--voice-btn-bg); width: 40px; height: 40px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; margin-left: 8px; cursor: pointer; }
+    .voice-button i { font-size: 20px; color: #FFF; }
+    .gesture-line { margin-top: 8px; width: 150px; height: 4px; background: #4a4a4a; border-radius: 2px; }
+    .reaction-bubble { position: absolute; bottom: -16px; right: 9px; background-color: #fff; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; }
+    .message.incoming .reaction-bubble { right: auto; left: 9px; transform: translateY(-5px); }
+    .reaction-bubble img { width: 17px; height: 17px; }
+    .message-box.overlap { position: relative; padding-right: 0; }
+    .message-box.overlap .text-content { position: relative; z-index: 2; padding-right: 22px; }
+    .message-box.overlap .emoji-box { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 1; }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <!-- Header -->
+    <div class="system-bar">
+      <div class="status-left">
+        <span class="time-text">7:58</span>
+      </div>
+      <div class="status-right">
+        <img width="15" height="15" src="https://img.icons8.com/ios-filled/50/medium-connection.png" alt="connection"/>
+        <img width="15" height="15" src="https://img.icons8.com/ios-filled/50/medium-connection.png" alt="connection"/>
+        <img width="20" height="20" src="https://img.icons8.com/windows/32/wifi--v1.png" alt="wifi"/>
+        <img class="battery-icon" width="20" height="20" src="https://img.icons8.com/material-two-tone/24/empty-battery.png" alt="battery"/>
+      </div>
+    </div>
+    <div class="wa-header">
+      <button class="back-button" title="Back">
+        <img src="https://img.icons8.com/ios-filled/24/000000/left.png" alt="back-arrow">
+      </button>
+      <img src="https://i.pinimg.com/736x/6c/3e/34/6c3e3474ac7bdc47cbf1fc150899c071.jpg" alt="Profile" class="profile-pic">
+      <div class="contact-info">
+        <div class="contact-name">Henry Cavill</div>
+        <div class="contact-status">online</div>
+      </div>
+      <div class="icon-area">
+        <button class="header-icon" title="Video Call">
+          <img width="22" height="24" src="https://img.icons8.com/material-outlined/24/video-call.png" alt="video-call"/>
+        </button>
+        <button class="header-icon phone-icon" title="Voice Call">
+          <img class="rotated" width="22" height="22" src="https://img.icons8.com/material-outlined/96/phone-disconnected.png" alt="phone-disconnected"/>
+        </button>
+        <button class="header-icon" title="Menu">
+          <img src="https://img.icons8.com/ios-filled/50/menu-2.png" alt="menu" width="19" height="19">
+        </button>
+      </div>
+    </div>
+    <!-- Chat Area -->
+    <div class="chat-area clearfix">
+      <!-- Fake messages will be generated here -->
+    </div>
+    <!-- Footer -->
+    <div class="bottom-bar">
+      <div class="message-container">
+        <div class="message-field">
+          <div class="icon sticker-icon">
+            <svg viewBox="0 0 28 28" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7,1 L21,1 A8,8 0 0 1 27,7 L27,12 A16,16 0 0 1 13,27 L7,27 A8,8 0 0 1 1,21 L1,7 A8,8 0 0 1 7,1 Z" fill="none" stroke="#666" stroke-width="2.5" />
+              <circle cx="10" cy="10" r="1" fill="none" />
+              <circle cx="18" cy="10" r="1" fill="none" />
+              <path d="M9,16 L19,16 Q14,23 9,16" fill="none" stroke="#666" stroke-width="2" />
+              <path d="M10,16.5 L18,16.5 Q14,21 10,16.5 Z" fill="#666" stroke="none" />
+              <path d="M13,26 L14,20 Q18,16 25,16" fill="var(--message-field-bg)" stroke="#666" stroke-width="2" />
+            </svg>
+          </div>
+          <input class="text-input" type="text" placeholder="Message" aria-label="Message input">
+          <div class="icon document-icon">
+            <img src="https://img.icons8.com/external-others-amoghdesign/24/external-attach-multimedia-solid-24px-others-amoghdesign.png" alt="attachment icon"/>
+          </div>
+          <div class="icon camera-icon">
+            <svg viewBox="0 0 64 64" fill="none" stroke="#666" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12,16 H24 C24,10 40,10 40,16 H52 V44 H12 Z"/>
+              <circle cx="32" cy="29" r="8"/>
+            </svg>
+          </div>
+        </div>
+        <button class="voice-button">
+          <i class="fa-solid fa-microphone"></i>
+        </button>
+      </div>
+      <div class="gesture-line"></div>
+    </div>
+  </div>
+  <!-- Include Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+  <!-- Include Faker -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Faker/3.1.0/faker.min.js"></script>
+  <!-- Define Base64 strings for emojis (stubbed so JS won’t throw) -->
+  <script>
+    const base64Thinking         = "";
+    const base64HeartEyes        = "";
+    const base64Phone            = "";
+    const base64Thinking2        = "";
+    const base64ThumbsUp         = "";
+    const base64CryLaugh         = "";
+    const base64ThumbsUpReaction = "";
+    const base64Emoji8           = "";
+    const base64Emoji9           = "";
+    const base64Emoji10          = "";
+  </script>
+  <!-- JavaScript to generate messages asynchronously and stop when a message touches the footer -->
+  <script>
+    // Utility: wait for a given time (ms)
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    document.addEventListener('DOMContentLoaded', async function() {
+      faker.locale = "en";
+      const chatArea = document.querySelector('.chat-area');
+      const bottomBar = document.querySelector('.bottom-bar');
+      const container = document.querySelector('.chat-container');
+      // compute container origin once for relative bboxes
+      const containerRect = container.getBoundingClientRect();
+      const annotations = [];
+  
+      // Get base name from URL query parameters, e.g. ?base_name=custom_stitched_1
+      const urlParams = new URLSearchParams(window.location.search);
+      let baseName = urlParams.get('base_name') || prompt("Enter a base name for this annotation (without extension):", "chat1");
+  
+      // Helper: create a timestamp div with unified absolute positioning.
+      function createTimestampDiv(time, isOutgoing) {
+        const timestampDiv = document.createElement('div');
+        timestampDiv.classList.add('timestamp');
+        timestampDiv.style.position = 'absolute';
+        timestampDiv.style.bottom = '2px';
+        timestampDiv.style.right = '2px';
+        const timestampBox = document.createElement('span');
+        timestampBox.classList.add('timestamp-box');
+        timestampBox.textContent = time;
+        timestampDiv.appendChild(timestampBox);
+        if (isOutgoing) {
+          const doubleTickSVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <g transform="translate(-4,-3)">
+              <path fill="#34B7F1" d="M17.394 7.017L9.197 15.214 5.803 11.82
+                c-.39-.39-1.025-.39-1.414 0-.39.39-.39 1.024 0 1.414l4.602 4.603
+                c.39.39 1.024.39 1.414 0l9.211-9.21c.39-.39.39-1.024 0-1.414
+                -.39-.39-1.025-.39-1.414 0z"/>
+            </g>
+            <g>
+              <path fill="#34B7F1" d="M21.394 4.017c-.39-.39-1.024-.39-1.414 0l-9.21 9.21
+                -1.414-1.414c-.39-.39-1.025-.39-1.414 0-.39.39-.39 1.024 0 1.414l2.12 2.12
+                c.39.39 1.024.39 1.414 0l10.627-10.626c-.39-.39-.39-1.024 0-1.414z"/>
+            </g>
+          </svg>`;
+          const doubleTickSpan = document.createElement('span');
+          doubleTickSpan.classList.add('double-tick');
+          doubleTickSpan.innerHTML = doubleTickSVG;
+          timestampDiv.appendChild(doubleTickSpan);
+        }
+        return timestampDiv;
+      }
+  
+      // generateFakeMessage returns a Promise that resolves to true if the message is added,
+      // or false if adding it would cause the content to reach the footer.
+      async function generateFakeMessage() {
+        return new Promise(async (resolve) => {
+          const r = Math.random();
+          let messageType;
+          if (r < 0.35) {
+            messageType = 0;
+          } else if (r < 0.55) {
+            messageType = 1;
+          } else if (r < 0.90) {
+            messageType = 2;
+          } else {
+            messageType = 4;
+          }
+  
+          const isIncoming = faker.random.boolean();
+          const date = faker.date.recent();
+          const timeText = date
+            .toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: true })
+            .toUpperCase();
+          const emojiTypes = [
+            'thinking', 'heartEyes', 'phone', 'thinking2',
+            'thumbsUp', 'cryLaugh', 'thumbsUpReaction', 'emoji8',
+            'emoji9', 'emoji10'
+          ];
+          function getEmojiSrc(name) {
+            switch(name) {
+              case 'thinking':         return base64Thinking;
+              case 'heartEyes':        return base64HeartEyes;
+              case 'phone':            return base64Phone;
+              case 'thinking2':        return base64Thinking2;
+              case 'thumbsUp':         return base64ThumbsUp;
+              case 'cryLaugh':         return base64CryLaugh;
+              case 'thumbsUpReaction': return base64ThumbsUpReaction;
+              case 'emoji8':           return base64Emoji8;
+              case 'emoji9':           return base64Emoji9;
+              case 'emoji10':          return base64Emoji10;
+              default: return "";
+            }
+          }
+  
+          let messageDiv = document.createElement('div');
+          messageDiv.classList.add('message', isIncoming ? 'incoming' : 'outgoing');
+  
+          if (messageType === 0) {
+            // Text message with optional inline emojis
+            const messageBoxDiv = document.createElement('div');
+            messageBoxDiv.classList.add('message-box');
+            const sentence = faker.lorem.sentence();
+            const words = sentence.split(" ");
+            const containerSpan = document.createElement('span');
+            for (let i = 0; i < words.length; i++) {
+              containerSpan.appendChild(document.createTextNode(words[i] + " "));
+              if (Math.random() < 0.05) {
+                const sel = emojiTypes[Math.floor(Math.random() * emojiTypes.length)];
+                const emojiSpan = document.createElement('span');
+                emojiSpan.classList.add('emoji-box');
+                const emojiImg = document.createElement('img');
+                emojiImg.alt = sel + ' emoji';
+                emojiImg.src = getEmojiSrc(sel);
+                emojiSpan.appendChild(emojiImg);
+                containerSpan.appendChild(emojiSpan);
+                containerSpan.appendChild(document.createTextNode(" "));
+              }
+            }
+            messageBoxDiv.appendChild(containerSpan);
+            messageDiv.appendChild(messageBoxDiv);
+            messageDiv.appendChild(createTimestampDiv(timeText, !isIncoming));
+            chatArea.appendChild(messageDiv);
+  
+            await wait(50);
+            let messageRect = messageDiv.getBoundingClientRect();
+            if (messageRect.bottom >= containerRect.bottom * 0.9) {
+              chatArea.removeChild(messageDiv);
+              console.log("Text message reached threshold (90%). Stopping generation.");
+              resolve(false);
+            } else {
+              const msgBox = messageDiv.querySelector('.message-box');
+              if (msgBox) {
+                const rect = msgBox.getBoundingClientRect();
+                annotations.push({
+                  "class": "message",
+                  "bbox": [
+                    Math.round(rect.left - containerRect.left),
+                    Math.round(rect.top  - containerRect.top),
+                    Math.round(rect.width),
+                    Math.round(rect.height)
+                  ]
+                });
+              }
+              resolve(true);
+            }
+  
+          } else if (messageType === 1) {
+            // Emoji-only message
+            const count = Math.floor(Math.random() * 4) + 1;
+            const emojiContainer = document.createElement('div');
+            for (let i = 0; i < count; i++) {
+              const emojiSpan = document.createElement('span');
+              emojiSpan.classList.add('emoji-box', count === 1 ? 'large-emoji' : 'small-emoji');
+              const sel = emojiTypes[Math.floor(Math.random() * emojiTypes.length)];
+              const emojiImg = document.createElement('img');
+              emojiImg.alt = sel + ' emoji';
+              emojiImg.src = getEmojiSrc(sel);
+              emojiSpan.appendChild(emojiImg);
+              emojiContainer.appendChild(emojiSpan);
+            }
+            messageDiv.appendChild(emojiContainer);
+            messageDiv.appendChild(createTimestampDiv(timeText, !isIncoming));
+            chatArea.appendChild(messageDiv);
+  
+            await wait(50);
+            let messageRect = messageDiv.getBoundingClientRect();
+            if (messageRect.bottom >= containerRect.bottom * 0.9) {
+              chatArea.removeChild(messageDiv);
+              console.log("Emoji-only message reached threshold (90%). Stopping generation.");
+              resolve(false);
+            } else {
+              resolve(true);
+            }
+  
+          } else if (messageType === 2) {
+            // Text message + reaction bubble
+            const messageBoxDiv = document.createElement('div');
+            messageBoxDiv.classList.add('message-box');
+            const sentence = faker.lorem.sentence();
+            const words = sentence.split(" ");
+            const containerSpan = document.createElement('span');
+            for (let i = 0; i < words.length; i++) {
+              containerSpan.appendChild(document.createTextNode(words[i] + " "));
+              if (Math.random() < 0.05) {
+                const sel = emojiTypes[Math.floor(Math.random() * emojiTypes.length)];
+                const emojiSpan = document.createElement('span');
+                emojiSpan.classList.add('emoji-box');
+                const emojiImg = document.createElement('img');
+                emojiImg.alt = sel + ' emoji';
+                emojiImg.src = getEmojiSrc(sel);
+                emojiSpan.appendChild(emojiImg);
+                containerSpan.appendChild(emojiSpan);
+                containerSpan.appendChild(document.createTextNode(" "));
+              }
+            }
+            messageBoxDiv.appendChild(containerSpan);
+            messageDiv.appendChild(messageBoxDiv);
+            messageDiv.appendChild(createTimestampDiv(timeText, !isIncoming));
+            // reaction bubble
+            const reactionBubble = document.createElement('div');
+            reactionBubble.classList.add('reaction-bubble');
+            const reactionEmojiSpan = document.createElement('span');
+            reactionEmojiSpan.classList.add('emoji-box', 'small-emoji');
+            const sel2 = emojiTypes[Math.floor(Math.random() * emojiTypes.length)];
+            const reactionImg = document.createElement('img');
+            reactionImg.alt = sel2 + ' emoji';
+            reactionImg.src = getEmojiSrc(sel2);
+            reactionEmojiSpan.appendChild(reactionImg);
+            reactionBubble.appendChild(reactionEmojiSpan);
+            messageDiv.appendChild(reactionBubble);
+            chatArea.appendChild(messageDiv);
+  
+            await wait(50);
+            let messageRect2 = messageDiv.getBoundingClientRect();
+            if (messageRect2.bottom >= containerRect.bottom * 0.9) {
+              chatArea.removeChild(messageDiv);
+              console.log("Reaction message reached threshold (90%). Stopping generation.");
+              resolve(false);
+            } else {
+              const msgBox = messageDiv.querySelector('.message-box');
+              if (msgBox) {
+                const rect = msgBox.getBoundingClientRect();
+                annotations.push({
+                  "class": "message",
+                  "bbox": [
+                    Math.round(rect.left - containerRect.left),
+                    Math.round(rect.top  - containerRect.top),
+                    Math.round(rect.width),
+                    Math.round(rect.height)
+                  ]
+                });
+              }
+              resolve(true);
+            }
+  
+          } else if (messageType === 4) {
+            // Image message
+            messageDiv.style.padding = "3px";
+            const images = [
+              "https://picsum.photos/seed/picsum/200/300",
+              "https://picsum.photos/200/200",
+              "https://picsum.photos/300/300",
+              "https://picsum.photos/250/350"
+            ];
+            const idx = Math.floor(Math.random() * images.length);
+            const imageUrl = images[idx];
+            const imgEl = document.createElement('img');
+            imgEl.src = imageUrl;
+            imgEl.style.width = "100%";
+            imgEl.style.borderRadius = "8px";
+            messageDiv.appendChild(imgEl);
+            // white timestamp over image
+            const tsDiv = createTimestampDiv(timeText, !isIncoming);
+            tsDiv.style.position = 'absolute';
+            tsDiv.style.bottom = '5px';
+            tsDiv.style.right = '1px';
+            tsDiv.style.color = '#FFF';
+            tsDiv.style.backgroundColor = "transparent";
+            tsDiv.style.textShadow = 'none';
+            messageDiv.appendChild(tsDiv);
+            chatArea.appendChild(messageDiv);
+  
+            imgEl.onload = async function() {
+              await wait(50);
+              let messageRectI = messageDiv.getBoundingClientRect();
+              if (messageRectI.bottom >= containerRect.bottom * 0.9) {
+                chatArea.removeChild(messageDiv);
+                console.log("Image message reached threshold (90%). Stopping generation.");
+                resolve(false);
+              } else {
+                resolve(true);
+              }
+            };
+            imgEl.onerror = function() {
+              console.error("Image failed to load. Removing message and stopping generation.");
+              chatArea.removeChild(messageDiv);
+              resolve(false);
+            };
+          }
+        });
+      }
+  
+      async function generateMessages() {
+        let count = 0;
+        while (count < 100) {  // safeguard: maximum 100 messages
+          let ok = await generateFakeMessage();
+          if (!ok) break;
+          count++;
+        }
+  
+        // Collect timestamp and emoji annotations
+        document.querySelectorAll('.timestamp-box').forEach(el => {
+          const rect = el.getBoundingClientRect();
+          annotations.push({
+            "class": "timestamp",
+            "bbox": [
+              Math.round(rect.left - containerRect.left),
+              Math.round(rect.top  - containerRect.top),
+              Math.round(rect.width),
+              Math.round(rect.height)
+            ]
+          });
+        });
+        document.querySelectorAll('.emoji-box').forEach(el => {
+          const rect = el.getBoundingClientRect();
+          annotations.push({
+            "class": "emoji",
+            "bbox": [
+              Math.round(rect.left - containerRect.left),
+              Math.round(rect.top  - containerRect.top),
+              Math.round(rect.width),
+              Math.round(rect.height)
+            ]
+          });
+        });
+  
+        const finalAnnotations = {
+          "base_name": baseName,
+          "image": baseName + ".png",
+          "width":  Math.round(containerRect.width),
+          "height": Math.round(containerRect.height),
+          "annotations": annotations,
+          "classes": ["emoji", "timestamp", "message"]
+        };
+  
+        fetch('/save_annotations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(finalAnnotations)
+        })
+        .then(res => res.json())
+        .then(data => console.log('Annotations saved:', data))
+        .catch(err => console.error('Error saving annotations:', err));
+      }
+  
+      await generateMessages();
+    });
+  </script>
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    return render_template_string(html_content)
+
+@app.route("/save_annotations", methods=["POST"])
+def save_annotations():
+    annotations = request.get_json()
+    base_name = annotations.get("base_name", "default_chat")
+    output_file = os.path.join(ANNOTATIONS_DIR, f"{base_name}.json")
+    with open(output_file, "w") as f:
+        json.dump(annotations, f, indent=4)
+    return jsonify({
+        "status": "success",
+        "annotations_saved": len(annotations.get("annotations", [])),
+        "base_name": base_name
+    })
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
