@@ -180,12 +180,3 @@ Distributed under the **MIT License**. See `LICENSE` for more info.
 * 👨‍💻 Developers contributing emoji datasets and tools
 
 ---
-
-## 🌐 Project Maintainer
-
-**Mutee-ur-Rehman**
-🔗 [GitHub](https://github.com/muteeurrehman28)
-📧 [Email](mailto:muteeurrehman28@gmail.com)
-💼 [LinkedIn](https://www.linkedin.com/in/muteeurrehman28)
-
----
